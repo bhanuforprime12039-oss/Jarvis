@@ -1,0 +1,77 @@
+workflows:
+  android-release:
+    name: Android Release (Signed APK)
+    max_build_duration: 60
+    environment:
+      flutter: stable
+    scripts:
+      - name: Regenerate Android folder (v2 embedding) and set toolchains
+        script: |
+          set -e
+          cd .
+          rm -rf android
+          flutter create .
+          sed -i 's/ext.kotlin_version = .*/ext.kotlin_version = "1.7.10"/' android/build.gradle || true
+          sed -i 's/com.android.tools.build:gradle:.*/com.android.tools.build:gradle:7.4.2/' android/build.gradle || true
+          mkdir -p android/gradle/wrapper
+          echo "distributionUrl=https\://services.gradle.org/distributions/gradle-7.5-all.zip" > android/gradle/wrapper/gradle-wrapper.properties
+          cd android/app
+          keytool -genkeypair -v -keystore jarvis.keystore -storepass '3H=dnrlp+Iv2hxFVY^j@0HaWpxwF' -alias jarviskey -keypass 'Uf5@f@#s2tD=PIRRCEgnmYWRZ@P6' -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Jarvis, OU=AI, O=Bhanu, L=Hyderabad, S=TS, C=IN"
+          cat > key.properties <<'EOF'
+          storePassword=3H=dnrlp+Iv2hxFVY^j@0HaWpxwF
+          keyPassword=Uf5@f@#s2tD=PIRRCEgnmYWRZ@P6
+          keyAlias=jarviskey
+          storeFile=jarvis.keystore
+          EOF
+          cat > build.gradle <<'EOF'
+          plugins {
+              id 'com.android.application'
+              id 'kotlin-android'
+          }
+
+          android {
+              namespace "com.bhanu.jarvis"
+              compileSdk 33
+
+              defaultConfig {
+                  applicationId "com.bhanu.jarvis"
+                  minSdk 21
+                  targetSdk 33
+                  versionCode 1
+                  versionName "1.0"
+              }
+
+              signingConfigs {
+                  release {
+                      def keystoreProperties = new Properties()
+                      file("key.properties").withInputStream { keystoreProperties.load(it) }
+                      keyAlias keystoreProperties['keyAlias']
+                      keyPassword keystoreProperties['keyPassword']
+                      storeFile file(keystoreProperties['storeFile'])
+                      storePassword keystoreProperties['storePassword']
+                  }
+              }
+
+              buildTypes {
+                  release {
+                      signingConfig signingConfigs.release
+                      minifyEnabled false
+                      shrinkResources false
+                  }
+              }
+          }
+
+          dependencies {
+              implementation "org.jetbrains.kotlin:kotlin-stdlib:1.7.10"
+          }
+          EOF
+      - name: Fetch dependencies
+        script: |
+          cd .
+          flutter pub get
+      - name: Build signed release APK
+        script: |
+          cd .
+          flutter build apk --release
+    artifacts:
+      - ./build/app/outputs/flutter-apk/app-release.apk
